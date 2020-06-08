@@ -19,6 +19,11 @@ final class MockerTests: XCTestCase {
             owner = jsonDictionary["owner"] as? String
         }
     }
+	
+	override func setUp() {
+		super.setUp()
+		Mocker.shared.onMockFor = nil	// make sure this is setup for each test
+	}
     
     /// It should returned the register mocked image data as response.
     func testImageURLDataRequest() {
@@ -401,4 +406,77 @@ final class MockerTests: XCTestCase {
         
         waitForExpectations(timeout: 10.0, handler: nil)
     }
+
+	/// It should call the `onMockFor` filter closure if set.
+	func testOnMockForFilterCalled() {
+        let url = URL(string: "https://www.fakeurl.com/DynamicTests")!
+		var onMockForCalled = false
+		
+		Mocker.shared.onMockFor = { (request: URLRequest) -> Mock? in
+			onMockForCalled = true
+			return nil
+		}
+		
+        var mock = Mock(url: url, dataType: .json, statusCode: 200, data: [.get: Data()])
+        let expectation = expectationForCompletingMock(&mock)
+        mock.register()
+
+		URLSession.shared.dataTask(with: URLRequest(url: url)).resume()
+		
+        wait(for: [expectation], timeout: 2.0)
+
+		XCTAssert(onMockForCalled, "our onMockFor handler was not called!")
+	}
+	
+	/// It should use the replacement mock set in the `onMockFor` filter closure
+	func testOnMockForReplacementMockUsed() {
+        let url = URL(string: "https://www.fakeurl.com")!
+		let injectedMockData = "{\"key\":\"value\"}".data(using: .utf8)!
+		
+		Mocker.shared.onMockFor = { (request: URLRequest) -> Mock? in
+			return Mock(dataType: .json, statusCode: 200, data: [.get: injectedMockData])
+		}
+		
+		let expectation = self.expectation(description: "Data request should succeed")
+
+		let mock = Mock(url: url, dataType: .json, statusCode: 200, data: [.get: Data()])
+        mock.register()
+
+		URLSession.shared.dataTask(with: URLRequest(url: url)) { (data, urlresponse, err) in
+
+            XCTAssertEqual(data, injectedMockData, "Data from injected mock not present")
+            XCTAssertNotNil(urlresponse)
+			XCTAssertNil(err)
+            
+            expectation.fulfill()
+        }.resume()
+		
+        wait(for: [expectation], timeout: 2.0)
+	}
+	
+	/// `onMockFor` returning nil for non-matching replacement mock shouldn't change behavior
+	func testOnMockForReplacementReturnsNil() {
+        let url = URL(string: "https://www.fakeurl.com")!
+		let mockData = "{\"key\":\"value\"}".data(using: .utf8)!
+		
+		Mocker.shared.onMockFor = { (request: URLRequest) -> Mock? in
+			return nil
+		}
+		
+		let expectation = self.expectation(description: "Data request should succeed")
+
+		let mock = Mock(url: url, dataType: .json, statusCode: 200, data: [.get: mockData])
+        mock.register()
+
+		URLSession.shared.dataTask(with: URLRequest(url: url)) { (data, urlresponse, err) in
+
+            XCTAssertEqual(data, mockData, "Data from mock not present")
+            XCTAssertNotNil(urlresponse)
+			XCTAssertNil(err)
+            
+            expectation.fulfill()
+        }.resume()
+		
+        wait(for: [expectation], timeout: 2.0)
+	}
 }
