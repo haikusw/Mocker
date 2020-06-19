@@ -127,7 +127,9 @@ class DynamicMocksTests: XCTestCase {
         wait(for: [expectFailure], timeout: 2.0)
     }
 
-    func FAILS_testOnMockForConditionalReplacementAvdLeeSuggestion2() {
+    // with the UPDATE modification, this works without the onMockFor addition.
+    //
+    func testOnMockForConditionalReplacementAvdLeeSuggestion2() {
         let service = FakeService() // the service we are testing
 
         // Create Mock data
@@ -136,13 +138,16 @@ class DynamicMocksTests: XCTestCase {
 
         // Create our three Mocks:
 
-        let succeedingProfileMock = Mock(url: FakeService.FakeServiceURLs.profileURL,
+        var succeedingProfileMock = Mock(url: FakeService.FakeServiceURLs.profileURL,
                                          dataType: .json,
                                          statusCode: 200,
                                          data: [.get: goodMockData])
         // succeedingMock.register() - Do NOT call now as will get replaced by failingMock.
         // Instead, try registering it in the `onRequest` handler for failingProfileMock
         // if the token has been updated
+        succeedingProfileMock.onRequest = { _, _ in
+            XCTAssertEqual(FakeService.accessToken.token, "good token", "refresh token call failed")
+        }
 
         let failingProfileMock = Mock(url: FakeService.FakeServiceURLs.profileURL,
                                       dataType: .json,
@@ -160,9 +165,12 @@ class DynamicMocksTests: XCTestCase {
             // Removing the if-test means we are *assuming* that the refresh payload
             // processing code worked, but that's part of the code under test so
             // we do not want to do that.
-            if FakeService.accessToken.token == "good token" {
+            
+            // UPDATE - however, as AvdLee points out, we can test that in an onRequest attached to the succeedingProfileMock.
+            
+//             if FakeService.accessToken.token == "good token" {
                 succeedingProfileMock.register()
-            }
+//            }
         }
 
         refreshTokenMock.register()
